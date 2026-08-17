@@ -1,0 +1,34 @@
+1. Challenges with Distributed Networking (Hotspots)
+Initially, testing on a local machine (127.0.0.1) worked flawlessly, but moving to a distributed setup with two laptops connected to a mobile hotspot introduced several connectivity hurdles.
+
+The Issue: WinError 10060 (Connection Timeout) occurred because the server was binding to 127.0.0.1, which is not reachable from external devices.
+
+The Fix: I updated the server to bind to 0.0.0.0 (all interfaces) and configured the clients to point specifically to the hotspot-assigned IP, 172.20.10.4.
+
+2. Handling TCP "Sticky Packets"
+During the stress test (5,000 messages), the server terminal began throwing JSONDecodeError: Extra data.
+
+The Issue: TCP is a stream-oriented protocol. When sending messages rapidly, multiple JSON objects were "clumped" into a single packet (e.g., {"type":"BCAST"}{"type":"BCAST"}). Standard json.loads() fails when it encounters multiple objects in one string.
+
+The Fix: I implemented a JSON Stream Decoder using json.JSONDecoder().raw_decode(). This allowed the server to iterate through the buffer and extract valid JSON objects one by one without crashing.
+
+3. Solving Server-Side Abortion (WinError 10053)
+The clients frequently reported that connections were "aborted by the software in your host machine" during high-load bursts.
+
+The Issue: The server was falling behind on disk I/O. Writing every single message to chat_history.json synchronously caused the main thread to block, eventually timing out the socket and triggering a reset.
+
+The Fix: I introduced an Asynchronous Logging Worker. By using a thread-safe queue.Queue, the server now hands off log entries to a background thread, allowing the main communication loop to remain responsive even under heavy load.
+
+4. Discovery Server Handshake Logic
+A KeyError: 'details' appeared when the performance script tried to register test clients.
+
+The Issue: The performance_test.py script sent registration data with keys username and password, but the discovery server was hardcoded to look for a details sub-dictionary.
+
+The Fix: I standardized the protocol across all scripts so that the Discovery Server correctly parses the flattened JSON structure sent by the load-testing tool.
+
+5. Resource Monitoring & Performance Visualization
+Learning to accurately sample system resources was crucial for Section 4.
+
+The Lesson: Using psutil in a dedicated monitoring thread provided a high-resolution look at the CPU "mountain" (utilization spikes) and Memory "staircase" (leakage/footprint).
+
+The Lesson: Scatter plots proved far more useful than simple histograms for identifying network jitter, as they visually map latency spikes to specific points in time during the 5,000-message sequence.
